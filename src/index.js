@@ -87,7 +87,7 @@ export default {
 			return new Response('Invalid URL protocol', { status: 400 });
 		}
 
-		const browser = await puppeteer.launch(env.MYBROWSER);
+		const browser = await puppeteer.launch(env.MYBROWSER, { keep_alive: 600000 });
 
 		try {
 			const page = await browser.newPage();
