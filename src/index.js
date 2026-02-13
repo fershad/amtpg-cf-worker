@@ -61,7 +61,7 @@ const generateSummary = (networkRequests, uniqueIpAddresses, thirdPartyRequests,
 	const thirdPartyHosts = tpIpAddresses.filter((ip) => ip !== hostIpAddress).length;
 
 	// GWF Verified third thirdParties
-	const verifiedThirdParties = greenInfo.filter((info) => info.green && tpIpAddresses.includes(info.ipAddress)).length;
+	const verifiedThirdParties = greenInfo.filter((info) => info.green && tpIpAddresses.includes(info.url)).length;
 
 	const summary = {
 		totalRequests,
