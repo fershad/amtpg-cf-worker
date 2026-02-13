@@ -8,6 +8,11 @@
 		"start": "wrangler dev",
 		"test": "vitest"
 	},
+	"dependencies": {
+		"@cloudflare/puppeteer": "^1.0.6",
+		"crux-api": "^4.0.0",
+		"third-party-web": "^0.29.0"
+	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.12.4",
 		"vitest": "~3.2.0",
