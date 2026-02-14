@@ -22,7 +22,7 @@ const ipLocLookup = async (env, ips = []) => {
 	const promises = ips.map(async (ip) => {
 		const response = await fetch(`${baseUrl}${ip}`, { headers });
 		const data = await response.json();
-		return data.result.ip;
+		return data.result?.ip || null;
 	});
 
 	return Promise.all(promises);
@@ -126,7 +126,11 @@ export default {
 
 			const uniqueIpAddresses = Array.from(new Set(enrichedRequests.map((req) => req.ipAddress)));
 			const hostIpAddress = enrichedRequests[0].ipAddress;
-			const thirdPartyRequests = enrichedRequests.filter((req) => req.ipAddress !== hostIpAddress);
+			const thirdPartyRequests = enrichedRequests
+				.filter((value, index, self) => index === self.findIndex((t) => t.ipAddress === value.ipAddress))
+				.filter((req) => req.ipAddress !== hostIpAddress);
+
+			console.log(thirdPartyRequests);
 
 			const ipInfo = await ipLocLookup(env, uniqueIpAddresses);
 			const greenInfo = await greencheck(uniqueIpAddresses);
@@ -134,7 +138,7 @@ export default {
 
 			const requestInfo = enrichedRequests.map((req) => ({
 				...req,
-				ipInfo: ipInfo.find((info) => info.ip === req.ipAddress) || null,
+				ipInfo: ipInfo.find((info) => info?.ip === req.ipAddress) || null,
 				greencheck: greenInfo.find((info) => info.url === req.ipAddress)?.hosted_by || null,
 				thirdParty: thirdPartyInfo.find((info) => info.url === req.url) || null,
 			}));
