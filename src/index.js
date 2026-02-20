@@ -131,8 +131,6 @@ export default {
 				.filter((value, index, self) => index === self.findIndex((t) => t.ipAddress === value.ipAddress))
 				.filter((req) => req.ipAddress !== hostIpAddress);
 
-			console.log(thirdPartyRequests);
-
 			const ipInfo = await ipLocLookup(env, uniqueIpAddresses);
 			const greenInfo = await greencheck(uniqueIpAddresses);
 			const thirdPartyInfo = await thirdPartyLookup(thirdPartyRequests);
@@ -144,10 +142,12 @@ export default {
 				thirdParty: thirdPartyInfo.find((info) => info.url === req.url) || null,
 			}));
 
+			const buffer = await page.screenshot();
+
 			return Response.json({
 				data: requestInfo,
 				summary: generateSummary(enrichedRequests, uniqueIpAddresses, thirdPartyRequests, greenInfo, hostIpAddress),
-				runLocation: runLocation,
+				runDetails: { location: runLocation, screenshot: buffer.toString('base64') },
 			});
 		} finally {
 			await browser.close();
