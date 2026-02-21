@@ -75,7 +75,8 @@ const generateSummary = (networkRequests, uniqueIpAddresses, thirdPartyRequests,
 
 export default {
 	async fetch(request, env) {
-		const runLocation = { city: request.cf.city, country: request.cf.country };
+		const timestamp = Date.now();
+		const runLocation = { colo: request.cf.colo, city: request.cf.city, country: request.cf.country };
 		const queryURL = new URL(request.url).searchParams.get('url');
 
 		if (!queryURL) {
@@ -147,7 +148,7 @@ export default {
 			return Response.json({
 				data: requestInfo,
 				summary: generateSummary(enrichedRequests, uniqueIpAddresses, thirdPartyRequests, greenInfo, hostIpAddress),
-				runDetails: { location: runLocation, screenshot: buffer.toString('base64') },
+				runDetails: { timestamp, location: runLocation, screenshot: buffer.toString('base64') },
 			});
 		} finally {
 			await browser.close();
