@@ -94,6 +94,7 @@ export default {
 		try {
 			const page = await browser.newPage();
 			const client = await page.target().createCDPSession();
+			await page.setViewport({ width: 1920, height: 1080 });
 			const requestsById = new Map();
 
 			client.on('Network.responseReceived', ({ requestId, response }) => {
