@@ -68,6 +68,7 @@ const generateSummary = (networkRequests, uniqueIpAddresses, thirdPartyRequests,
 		uniqueHosts,
 		thirdPartyHosts,
 		verifiedThirdParties,
+		hostIpAddress,
 	};
 
 	return summary;
@@ -141,7 +142,7 @@ export default {
 				...req,
 				ipInfo: ipInfo.find((info) => info?.ip === req.ipAddress) || null,
 				greencheck: greenInfo.find((info) => info.url === req.ipAddress)?.hosted_by || null,
-				thirdParty: thirdPartyInfo.find((info) => info.url === req.url) || null,
+				thirdParty: thirdPartyInfo.find((info) => info.url === req.url) || {},
 			}));
 
 			const buffer = await page.screenshot();
