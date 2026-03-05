@@ -152,9 +152,10 @@ export default {
 
 			const requestInfo = enrichedRequests.map((req) => ({
 				...req,
-				ipInfo: ipInfo.find((info) => info?.ip === req.ipAddress) || null,
-				greencheck: greenInfo.find((info) => info.url === req.ipAddress)?.hosted_by || null,
+				ipInfo: ipInfo.find((info) => info?.ip?.ip === req.ipAddress)?.ip || null,
+				greencheck: greenInfo.find((info) => info.url === req.ipAddress) || null,
 				thirdParty: thirdPartyInfo.find((info) => info.url === req.url) || {},
+				gridData: ipInfo.find((info) => info?.ip?.ip === req.ipAddress)?.gridData || null,
 			}));
 
 			const buffer = await page.screenshot();
