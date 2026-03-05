@@ -79,6 +79,18 @@ export default {
 		const timestamp = Date.now();
 		const runLocation = { colo: request.cf.colo, city: request.cf.city, country: request.cf.country };
 		const queryURL = new URL(request.url).searchParams.get('url');
+		const nocache = new URL(request.url).searchParams.get('nocache') === 'true' ? true : false;
+		const cacheKey = `${runLocation.colo}-${queryURL}`;
+		const cache = env.CACHE;
+
+		if (!nocache) {
+			const cachedResponse = await cache.get(cacheKey);
+			if (cachedResponse) {
+				const json = JSON.parse(cachedResponse);
+				json.cache = true;
+				return Response.json(json);
+			}
+		}
 
 		if (!queryURL) {
 			return new Response('Missing URL parameter', { status: 400 });
@@ -147,11 +159,16 @@ export default {
 
 			const buffer = await page.screenshot();
 
-			return Response.json({
+			const response = {
+				cache: false,
 				data: requestInfo,
 				summary: generateSummary(enrichedRequests, uniqueIpAddresses, thirdPartyRequests, greenInfo, hostIpAddress),
 				runDetails: { timestamp, location: runLocation, screenshot: buffer.toString('base64') },
-			});
+			};
+
+			// Cache fors 7 days
+			await cache.put(cacheKey, JSON.stringify(response), { ttl: 604800 });
+			return Response.json(response);
 		} finally {
 			await browser.close();
 		}
