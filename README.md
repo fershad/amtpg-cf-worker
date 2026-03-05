@@ -2,6 +2,8 @@
 
 This Cloudflare Workers powers the [Are my third parties green?](https://amtpg.run) online checking tool.
 
+![](https://aremythirdpartiesgreen.com/ogimage.jpg)
+
 This project relies on:
 
 - Cloudflare [Workers](https://developers.cloudflare.com/workers/)
