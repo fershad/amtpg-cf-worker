@@ -28,16 +28,42 @@ const ipLocLookup = async (env, ips = []) => {
 	return Promise.all(promises);
 };
 
-const greencheck = async (ips = []) => {
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const greencheck = async (ips = [], delayMs = 200, concurrency = 2) => {
 	const base = 'https://api.thegreenwebfoundation.org/api/v3/greencheck/';
 
-	const promises = ips.map(async (ip) => {
-		const response = await fetch(`${base}${ip}`);
-		const data = await response.json();
-		return data;
-	});
+	if (ips.length === 0) return [];
 
-	return Promise.all(promises);
+	const results = new Array(ips.length);
+	let index = 0;
+
+	const limit = Math.max(1, Math.min(concurrency, ips.length));
+
+	const worker = async () => {
+		while (true) {
+			const current = index++;
+			if (current >= ips.length) return;
+
+			const ip = ips[current];
+
+			try {
+				const response = await fetch(`${base}${ip}`);
+				const data = await response.json();
+				results[current] = data;
+			} catch {
+				console.error(`Failed to fetch greencheck for ${ip}`);
+				throw new Error(`Failed to fetch greencheck for ${ip}`);
+			} finally {
+				// Wait between requests to avoid rate limiting
+				await delay(delayMs);
+			}
+		}
+	};
+
+	await Promise.all(Array.from({ length: limit }, () => worker()));
+
+	return results;
 };
 
 const thirdPartyLookup = async (requests = []) => {
