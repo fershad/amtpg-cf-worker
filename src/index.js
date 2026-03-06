@@ -144,7 +144,10 @@ export default {
 			});
 
 			await client.send('Network.enable');
-			await page.goto(sanitizedURL);
+			await page.goto(sanitizedURL, {
+				waitUntil: 'networkidle0',
+				timeout: 60000,
+			});
 
 			const networkRequests = Array.from(requestsById.values()).filter((req) => req.ipAddress !== null);
 
