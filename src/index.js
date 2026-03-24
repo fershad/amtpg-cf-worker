@@ -2,6 +2,12 @@ import puppeteer from '@cloudflare/puppeteer';
 import { normalizeUrl } from 'crux-api';
 import { getEntity } from 'third-party-web';
 
+const DEBUG_PARAM = '__debug';
+
+const pushLimited = (arr, item, limit = 50) => {
+	if (arr.length < limit) arr.push(item);
+};
+
 const resolveHostToIp = async (hostname) => {
 	const response = await fetch(`https://cloudflare-dns.com/dns-query?name=${hostname}&type=A`, {
 		headers: { Accept: 'application/dns-json' },
@@ -22,7 +28,7 @@ const ipLocLookup = async (env, ips = []) => {
 	const promises = ips.map(async (ip) => {
 		const response = await fetch(`${baseUrl}${ip}`, { headers });
 		const data = await response.json();
-		return data.result?.ip || null;
+		return data?.result || null;
 	});
 
 	return Promise.all(promises);
@@ -104,12 +110,17 @@ export default {
 	async fetch(request, env) {
 		const timestamp = Date.now();
 		const runLocation = { colo: request.cf.colo, city: request.cf.city, country: request.cf.country };
-		const queryURL = new URL(request.url).searchParams.get('url');
-		const nocache = new URL(request.url).searchParams.get('nocache') === 'true' ? true : false;
+		const requestUrl = new URL(request.url);
+		const queryURL = requestUrl.searchParams.get('url');
+		const debugToken = env.DEBUG_TOKEN;
+		const debugParamValue = requestUrl.searchParams.get(DEBUG_PARAM);
+		const debug = Boolean(debugToken && debugParamValue === debugToken);
+		const nocache = requestUrl.searchParams.get('nocache') === 'true' ? true : false;
 		const cacheKey = `${runLocation.colo}-${queryURL}`;
 		const cache = env.CACHE;
+		const shouldUseCache = !nocache && !debug;
 
-		if (!nocache) {
+		if (shouldUseCache) {
 			const cachedResponse = await cache.get(cacheKey);
 			if (cachedResponse) {
 				const json = JSON.parse(cachedResponse);
@@ -128,13 +139,52 @@ export default {
 			return new Response('Invalid URL protocol', { status: 400 });
 		}
 
-		const browser = await puppeteer.launch(env.MYBROWSER, { keep_alive: 600000 });
+		const browser = await puppeteer.launch(env.MYBROWSER, { keep_alive: 120000 });
+
+		const debugInfo = {
+			enabled: debug,
+			navigation: null,
+			console: [],
+			pageErrors: [],
+			requestFailures: [],
+			networkFailures: [],
+		};
+
+		const debugLog = (message, data) => {
+			if (debug) console.log(`[debug] ${message}`, data ?? '');
+		};
 
 		try {
 			const page = await browser.newPage();
 			const client = await page.target().createCDPSession();
 			await page.setViewport({ width: 1920, height: 1080 });
 			const requestsById = new Map();
+
+			page.on('console', (msg) => {
+				pushLimited(debugInfo.console, { type: msg.type(), text: msg.text() });
+			});
+
+			page.on('pageerror', (error) => {
+				pushLimited(debugInfo.pageErrors, { message: error?.message || String(error) });
+			});
+
+			page.on('requestfailed', (req) => {
+				const failure = req.failure();
+				pushLimited(debugInfo.requestFailures, {
+					url: req.url(),
+					method: req.method(),
+					failure: failure ? failure.errorText : 'unknown',
+				});
+			});
+
+			client.on('Network.loadingFailed', (evt) => {
+				pushLimited(debugInfo.networkFailures, {
+					requestId: evt.requestId,
+					errorText: evt.errorText,
+					canceled: evt.canceled,
+					type: evt.type,
+				});
+			});
 
 			client.on('Network.responseReceived', ({ requestId, response }) => {
 				requestsById.set(requestId, {
@@ -144,10 +194,35 @@ export default {
 			});
 
 			await client.send('Network.enable');
-			await page.goto(sanitizedURL, {
-				waitUntil: 'networkidle0',
-				timeout: 60000,
-			});
+			const navigationStart = Date.now();
+			const waitUntil = 'networkidle2';
+			const timeoutMs = 120000;
+			try {
+				await page.goto(sanitizedURL, {
+					waitUntil,
+					timeout: timeoutMs,
+				});
+				debugInfo.navigation = {
+					status: 'success',
+					waitUntil,
+					timeoutMs,
+					durationMs: Date.now() - navigationStart,
+				};
+			} catch (error) {
+				const message = error?.message || String(error);
+				debugInfo.navigation = {
+					status: 'error',
+					waitUntil,
+					timeoutMs,
+					durationMs: Date.now() - navigationStart,
+					message,
+				};
+				debugLog('Navigation failed', debugInfo.navigation);
+				const isTimeout = error?.name === 'TimeoutError' || /Navigation timeout/i.test(message);
+				if (!isTimeout) {
+					throw error;
+				}
+			}
 
 			const networkRequests = Array.from(requestsById.values()).filter((req) => req.ipAddress !== null);
 
@@ -169,11 +244,11 @@ export default {
 				ipAddress: hostnameToIp.get(new URL(req.url).hostname) || null,
 			}));
 
-			const uniqueIpAddresses = Array.from(new Set(enrichedRequests.map((req) => req.ipAddress)));
-			const hostIpAddress = enrichedRequests[0].ipAddress;
+			const uniqueIpAddresses = Array.from(new Set(enrichedRequests.map((req) => req.ipAddress).filter(Boolean)));
+			const hostIpAddress = enrichedRequests[0]?.ipAddress || null;
 			const thirdPartyRequests = enrichedRequests
 				.filter((value, index, self) => index === self.findIndex((t) => t.ipAddress === value.ipAddress))
-				.filter((req) => req.ipAddress !== hostIpAddress);
+				.filter((req) => req.ipAddress && req.ipAddress !== hostIpAddress);
 
 			const ipInfo = await ipLocLookup(env, uniqueIpAddresses);
 			const greenInfo = await greencheck(uniqueIpAddresses);
@@ -196,9 +271,24 @@ export default {
 				runDetails: { timestamp, location: runLocation, screenshot: buffer.toString('base64') },
 			};
 
-			// Cache fors 7 days
-			await cache.put(cacheKey, JSON.stringify(response), { ttl: 604800 });
+			if (debug) {
+				response.debug = debugInfo;
+			}
+
+			// Cache for 7 days
+			if (shouldUseCache) {
+				await cache.put(cacheKey, JSON.stringify(response), { expirationTtl: 604800 });
+			}
 			return Response.json(response);
+		} catch (error) {
+			if (debug) {
+				debugInfo.error = {
+					message: error?.message || String(error),
+					stack: error?.stack || null,
+				};
+				return Response.json({ error: 'Request failed', message: error?.message || String(error), debug: debugInfo }, { status: 500 });
+			}
+			throw error;
 		} finally {
 			await browser.close();
 		}
